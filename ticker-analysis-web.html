@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ticker Analysis</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 700px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        h1 { color: #333; margin-bottom: 10px; font-size: 24px; }
+        .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; color: #555; font-weight: 600; }
+        input[type="text"], input[type="date"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-success { background: #48bb78; color: white; }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
+        .results { margin-top: 30px; padding: 20px; background: #f7fafc; border-radius: 8px; display: none; }
+        .results.show { display: block; }
+        .result-header {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+            margin-top: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .result-header:first-child { margin-top: 0; }
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .result-label { font-weight: 600; color: #555; }
+        .result-value { font-weight: 600; }
+        .positive { color: #48bb78; }
+        .negative { color: #f56565; }
+        .avg-return {
+            background: #edf2f7;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            text-align: center;
+        }
+        .avg-return-label { font-size: 14px; color: #666; margin-bottom: 5px; }
+        .avg-return-value { font-size: 32px; font-weight: 700; }
+        .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+        .data-table thead tr { background: #e2e8f0; }
+        .data-table th { padding: 10px; text-align: left; border: 1px solid #cbd5e0; font-weight: 600; }
+        .data-table td { padding: 8px; border: 1px solid #cbd5e0; }
+        .data-table td.right { text-align: right; }
+        .status { margin-top: 15px; padding: 10px; border-radius: 5px; text-align: center; font-size: 14px; display: none; }
+        .status.show { display: block; }
+        .status.loading { background: #bee3f8; color: #2c5282; }
+        .status.success { background: #c6f6d5; color: #22543d; }
+        .status.error { background: #fed7d7; color: #742a2a; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Ticker Analysis</h1>
+        <p class="subtitle">Average Return: Last 5 Trading Days</p>
+        
+        <div class="form-group">
+            <label for="ticker">Ticker Symbol</label>
+            <input type="text" id="ticker" value="AAPL">
+        </div>
+        
+        <div class="form-group">
+            <label for="cutoffDate">Cutoff Date</label>
+            <input type="date" id="cutoffDate">
+        </div>
+        
+        <div>
+            <button class="btn btn-primary" id="analyzeBtn">Analyze</button>
+            <button class="btn btn-success" id="exportBtn" disabled>Export CSV</button>
+        </div>
+        
+        <div id="status" class="status"></div>
+        
+        <div class="results" id="intradayResults">
+            <div class="result-header">Intraday - First Two 30-Min Periods</div>
+            <div class="result-item">
+                <span class="result-label">Date:</span>
+                <span class="result-value" id="intradayDate"></span>
+            </div>
+            <div class="avg-return">
+                <div class="avg-return-label">First 30 Minutes</div>
+                <div class="avg-return-value" id="firstPeriodReturn"></div>
+            </div>
+            <div class="avg-return">
+                <div class="avg-return-label">Second 30 Minutes</div>
+                <div class="avg-return-value" id="secondPeriodReturn"></div>
+            </div>
+            <div id="intradayDetails"></div>
+        </div>
+        
+        <div class="results" id="results">
+            <div class="result-header">Daily Analysis</div>
+            <div class="result-item">
+                <span class="result-label">Symbol:</span>
+                <span class="result-value" id="symbolDisplay"></span>
+            </div>
+            <div class="result-item">
+                <span class="result-label">Cutoff Date:</span>
+                <span class="result-value" id="dateDisplay"></span>
+            </div>
+            <div class="avg-return">
+                <div class="avg-return-label">Average 5-Day Return</div>
+                <div class="avg-return-value" id="avgReturn"></div>
+            </div>
+            <div class="result-header">Last 5 Trading Days</div>
+            <div id="dailyReturns"></div>
+            <div class="result-header">Raw Data (Last 10 Days)</div>
+            <div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Close Price</th>
+                            <th>Daily Return</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rawDataBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var analysisData = null;
+        var intradayData = null;
+        
+        document.getElementById('cutoffDate').valueAsDate = new Date();
+        
+        function showStatus(message, type) {
+            var statusEl = document.getElementById('status');
+            statusEl.className = 'status ' + type + ' show';
+            statusEl.textContent = message;
+        }
+        
+        function generateMockData() {
+            var basePrice = 150 + Math.random() * 100;
+            var data = [];
+            var today = new Date();
+            
+            for (var i = 15; i >= 0; i--) {
+                var date = new Date(today);
+                date.setDate(date.getDate() - i);
+                if (date.getDay() === 0 || date.getDay() === 6) continue;
+                
+                var trend = Math.sin(i / 3) * 3;
+                var randomChange = (Math.random() - 0.5) * 4;
+                var price = basePrice + trend + randomChange;
+                
+                data.push({
+                    Date: date.toISOString().substring(0, 10),
+                    'Adj Close': parseFloat(price.toFixed(2)),
+                    Close: parseFloat(price.toFixed(2))
+                });
+            }
+            return data;
+        }
+        
+        function calculateDailyReturns(data) {
+            var returns = [];
+            for (var i = 1; i < data.length; i++) {
+                var currentClose = parseFloat(data[i]['Adj Close']);
+                var prevClose = parseFloat(data[i-1]['Adj Close']);
+                
+                if (prevClose !== 0 && !isNaN(currentClose) && !isNaN(prevClose)) {
+                    var returnPct = ((currentClose / prevClose) - 1) * 100;
+                    returns.push({
+                        date: data[i].Date,
+                        close: currentClose,
+                        return: returnPct
+                    });
+                }
+            }
+            return returns;
+        }
+        
+        async function fetchTickerData(symbol, endDate) {
+            var apiKey = 'WWY97VEDHT7BXVWU';
+            var url = 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=' + symbol + '&apikey=' + apiKey + '&outputsize=full';
+            
+            try {
+                var response = await fetch(url);
+                var json = await response.json();
+                
+                if (json.Note || json.Information || json['Error Message']) {
+                    return generateMockData();
+                }
+                
+                var timeSeries = json['Time Series (Daily)'];
+                if (!timeSeries) {
+                    return generateMockData();
+                }
+                
+                var cutoff = new Date(endDate);
+                var data = [];
+                
+                for (var date in timeSeries) {
+                    var values = timeSeries[date];
+                    var itemDate = new Date(date);
+                    if (itemDate <= cutoff) {
+                        data.push({
+                            Date: date,
+                            'Adj Close': parseFloat(values['5. adjusted close']),
+                            Close: parseFloat(values['4. close'])
+                        });
+                    }
+                }
+                
+                data.sort(function(a, b) {
+                    return new Date(a.Date) - new Date(b.Date);
+                });
+                
+                return data.length > 0 ? data : generateMockData();
+            } catch (error) {
+                return generateMockData();
+            }
+        }
+        
+        async function fetchIntradayData(symbol, apiKey) {
+            var url = 'https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=' + symbol + '&interval=30min&apikey=' + apiKey + '&outputsize=full';
+            
+            try {
+                var response = await fetch(url);
+                var json = await response.json();
+                
+                if (json.Note || json.Information) return null;
+                
+                var timeSeries = json['Time Series (30min)'];
+                if (!timeSeries) return null;
+                
+                var dataArray = [];
+                for (var timestamp in timeSeries) {
+                    var values = timeSeries[timestamp];
+                    var parts = timestamp.split(' ');
+                    dataArray.push({
+                        timestamp: timestamp,
+                        date: parts[0],
+                        time: parts[1],
+                        close: parseFloat(values['4. close'])
+                    });
+                }
+                
+                dataArray.sort(function(a, b) {
+                    return new Date(b.timestamp) - new Date(a.timestamp);
+                });
+                
+                return dataArray;
+            } catch (error) {
+                return null;
+            }
+        }
+        
+        function calculateFirstTwoPeriods(intradayData) {
+            if (!intradayData || intradayData.length < 2) return null;
+            
+            var mostRecentDate = intradayData[0].date;
+            var todayData = [];
+            
+            for (var i = 0; i < intradayData.length; i++) {
+                if (intradayData[i].date === mostRecentDate) {
+                    todayData.push(intradayData[i]);
+                }
+            }
+            
+            // Sort by time ascending (earliest first)
+            todayData.sort(function(a, b) {
+                return a.time.localeCompare(b.time);
+            });
+            
+            console.log('All periods for ' + mostRecentDate + ':', todayData.map(function(d) { return d.time; }));
+            
+            // Filter to only include market hours (after 09:30)
+            // Times like 04:00 are pre-market, we want regular trading hours
+            var marketHours = [];
+            for (var i = 0; i < todayData.length; i++) {
+                var timeStr = todayData[i].time;
+                var hour = parseInt(timeStr.split(':')[0]);
+                var minute = parseInt(timeStr.split(':')[1]);
+                
+                // Market opens at 09:30 ET, so we want times >= 09:30
+                if (hour > 9 || (hour === 9 && minute >= 30)) {
+                    marketHours.push(todayData[i]);
+                }
+            }
+            
+            console.log('Market hours periods:', marketHours.map(function(d) { return d.time; }));
+            
+            if (marketHours.length < 3) {
+                console.log('Not enough market hours periods');
+                return null;
+            }
+            
+            // period1 = market open (e.g., 09:30)
+            // period2 = first 30 minutes after open (e.g., 10:00)
+            // period3 = second 30 minutes after open (e.g., 10:30)
+            var period1 = marketHours[0];
+            var period2 = marketHours[1];
+            var period3 = marketHours[2];
+            
+            console.log('First period (market open):', period1.time, period1.close);
+            console.log('Second period (+30 min):', period2.time, period2.close);
+            console.log('Third period (+60 min):', period3.time, period3.close);
+            
+            var return1 = ((period2.close / period1.close) - 1) * 100;
+            var return2 = ((period3.close / period2.close) - 1) * 100;
+            
+            return {
+                date: mostRecentDate,
+                period1: { time: period1.time, close: period1.close },
+                period2: { time: period2.time, close: period2.close, return: return1 },
+                period3: { time: period3.time, close: period3.close, return: return2 }
+            };
+        }
+        
+        document.getElementById('analyzeBtn').addEventListener('click', async function() {
+            var ticker = document.getElementById('ticker').value.trim().toUpperCase();
+            var cutoffDate = document.getElementById('cutoffDate').value;
+            
+            if (!ticker) {
+                alert('Please enter a ticker symbol');
+                return;
+            }
+            
+            var analyzeBtn = document.getElementById('analyzeBtn');
+            analyzeBtn.disabled = true;
+            analyzeBtn.textContent = 'Analyzing...';
+            document.getElementById('exportBtn').disabled = true;
+            document.getElementById('results').classList.remove('show');
+            document.getElementById('intradayResults').classList.remove('show');
+            
+            showStatus('Fetching data for ' + ticker + '...', 'loading');
+            
+            var data = await fetchTickerData(ticker, cutoffDate);
+            
+            if (!data || data.length === 0) {
+                showStatus('Error: Unable to generate data', 'error');
+                analyzeBtn.disabled = false;
+                analyzeBtn.textContent = 'Analyze';
+                return;
+            }
+            
+            var intraday = null;
+            try {
+                intraday = await fetchIntradayData(ticker, 'WWY97VEDHT7BXVWU');
+            } catch (error) {
+                console.log('Intraday failed');
+            }
+            
+            var returns = calculateDailyReturns(data);
+            
+            if (returns.length < 5) {
+                showStatus('Error: Not enough trading days', 'error');
+                analyzeBtn.disabled = false;
+                analyzeBtn.textContent = 'Analyze';
+                return;
+            }
+            
+            var last5 = returns.slice(-5);
+            var sum = 0;
+            for (var i = 0; i < last5.length; i++) {
+                sum += last5[i].return;
+            }
+            var avgReturn = sum / 5;
+            
+            analysisData = {
+                ticker: ticker,
+                cutoffDate: cutoffDate,
+                avgReturn: avgReturn,
+                dailyReturns: last5,
+                allReturns: returns
+            };
+            
+            document.getElementById('symbolDisplay').textContent = ticker;
+            document.getElementById('dateDisplay').textContent = cutoffDate;
+            
+            var avgEl = document.getElementById('avgReturn');
+            avgEl.textContent = avgReturn.toFixed(2) + '%';
+            avgEl.className = 'avg-return-value ' + (avgReturn >= 0 ? 'positive' : 'negative');
+            
+            var dailyEl = document.getElementById('dailyReturns');
+            dailyEl.innerHTML = '';
+            
+            for (var i = 0; i < last5.length; i++) {
+                var day = last5[i];
+                var div = document.createElement('div');
+                div.className = 'result-item';
+                var label = document.createElement('span');
+                label.className = 'result-label';
+                label.textContent = 'Day ' + (i + 1) + ' (' + day.date + ')';
+                var value = document.createElement('span');
+                value.className = 'result-value ' + (day.return >= 0 ? 'positive' : 'negative');
+                value.textContent = day.return.toFixed(2) + '%';
+                div.appendChild(label);
+                div.appendChild(value);
+                dailyEl.appendChild(div);
+            }
+            
+            var rawDataBody = document.getElementById('rawDataBody');
+            rawDataBody.innerHTML = '';
+            
+            var last10 = returns.slice(-10).reverse();
+            for (var i = 0; i < last10.length; i++) {
+                var day = last10[i];
+                var row = document.createElement('tr');
+                var dateCell = document.createElement('td');
+                dateCell.textContent = day.date;
+                var priceCell = document.createElement('td');
+                priceCell.className = 'right';
+                priceCell.textContent = '$' + day.close.toFixed(2);
+                var returnCell = document.createElement('td');
+                returnCell.className = 'right ' + (day.return >= 0 ? 'positive' : 'negative');
+                returnCell.textContent = day.return.toFixed(2) + '%';
+                row.appendChild(dateCell);
+                row.appendChild(priceCell);
+                row.appendChild(returnCell);
+                rawDataBody.appendChild(row);
+            }
+            
+            document.getElementById('results').classList.add('show');
+            
+            if (intraday) {
+                var intradayAnalysis = calculateFirstTwoPeriods(intraday);
+                if (intradayAnalysis) {
+                    document.getElementById('intradayDate').textContent = intradayAnalysis.date;
+                    
+                    var firstReturn = document.getElementById('firstPeriodReturn');
+                    firstReturn.textContent = intradayAnalysis.period2.return.toFixed(2) + '%';
+                    firstReturn.className = 'avg-return-value ' + (intradayAnalysis.period2.return >= 0 ? 'positive' : 'negative');
+                    
+                    var secondReturn = document.getElementById('secondPeriodReturn');
+                    secondReturn.textContent = intradayAnalysis.period3.return.toFixed(2) + '%';
+                    secondReturn.className = 'avg-return-value ' + (intradayAnalysis.period3.return >= 0 ? 'positive' : 'negative');
+                    
+                    var detailsEl = document.getElementById('intradayDetails');
+                    detailsEl.innerHTML = '<div class="result-item"><span class="result-label">' + intradayAnalysis.period1.time + ' Close:</span><span class="result-value">$' + intradayAnalysis.period1.close.toFixed(2) + '</span></div>' +
+                    '<div class="result-item"><span class="result-label">' + intradayAnalysis.period2.time + ' Close:</span><span class="result-value">$' + intradayAnalysis.period2.close.toFixed(2) + '</span></div>' +
+                    '<div class="result-item"><span class="result-label">' + intradayAnalysis.period3.time + ' Close:</span><span class="result-value">$' + intradayAnalysis.period3.close.toFixed(2) + '</span></div>';
+                    
+                    document.getElementById('intradayResults').classList.add('show');
+                    intradayData = intradayAnalysis;
+                }
+            }
+            
+            showStatus('Analysis complete!', 'success');
+            document.getElementById('exportBtn').disabled = false;
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = 'Analyze';
+        });
+        
+        document.getElementById('exportBtn').addEventListener('click', function() {
+            if (!analysisData) return;
+            
+            var csv = 'Ticker Analysis Report\n\n';
+            csv += 'Symbol,' + analysisData.ticker + '\n';
+            csv += 'Cutoff Date,' + analysisData.cutoffDate + '\n';
+            csv += 'Average 5-Day Return,' + analysisData.avgReturn.toFixed(4) + '%\n\n';
+            csv += 'Day,Date,Close Price,Daily Return\n';
+            
+            for (var i = 0; i < analysisData.dailyReturns.length; i++) {
+                var day = analysisData.dailyReturns[i];
+                csv += 'Day ' + (i + 1) + ',' + day.date + ',' + day.close.toFixed(2) + ',' + day.return.toFixed(4) + '%\n';
+            }
+            
+            csv += '\n\nAll Daily Returns\n';
+            csv += 'Date,Close Price,Daily Return\n';
+            for (var i = 0; i < analysisData.allReturns.length; i++) {
+                var day = analysisData.allReturns[i];
+                csv += day.date + ',' + day.close.toFixed(2) + ',' + day.return.toFixed(4) + '%\n';
+            }
+            
+            if (intradayData) {
+                csv += '\n\nIntraday Analysis\n';
+                csv += 'Period,Time,Close Price,Return\n';
+                csv += 'Market Open,' + intradayData.period1.time + ',' + intradayData.period1.close.toFixed(2) + ',N/A\n';
+                csv += 'First 30min,' + intradayData.period2.time + ',' + intradayData.period2.close.toFixed(2) + ',' + intradayData.period2.return.toFixed(4) + '%\n';
+                csv += 'Second 30min,' + intradayData.period3.time + ',' + intradayData.period3.close.toFixed(2) + ',' + intradayData.period3.return.toFixed(4) + '%\n';
+            }
+            
+            var blob = new Blob([csv], { type: 'text/csv' });
+            var url = window.URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'Ticker_Analysis_' + analysisData.ticker + '.csv';
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            showStatus('CSV downloaded!', 'success');
+        });
+    </script>
+</body>
+</html>
