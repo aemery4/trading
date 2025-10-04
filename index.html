@@ -292,7 +292,18 @@
             }
         }
         
-        function calculateFirstTwoPeriods(intradayData) {
+        function calculateFirstTwoPeriods(intradayData, cutoffDate) {
+            // Filter to only include dates up to and including the cutoff date
+            var validData = [];
+            var cutoff = new Date(cutoffDate);
+            
+            for (var i = 0; i < intradayData.length; i++) {
+                var itemDate = new Date(intradayData[i].date);
+                if (itemDate <= cutoff) {
+                    validData.push(intradayData[i]);
+                }
+            }
+            
             if (!intradayData || intradayData.length < 2) return null;
             
             var mostRecentDate = intradayData[0].date;
@@ -461,7 +472,7 @@
             document.getElementById('results').classList.add('show');
             
             if (intraday) {
-                var intradayAnalysis = calculateFirstTwoPeriods(intraday);
+                var intradayAnalysis = calculateFirstTwoPeriods(intraday, cutoffDate);
                 if (intradayAnalysis) {
                     document.getElementById('intradayDate').textContent = intradayAnalysis.date;
                     
