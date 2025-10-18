@@ -32,15 +32,22 @@
             background: #f7fafc;
         }
         .file-input-wrapper {
-            position: relative;
             display: inline-block;
         }
-        input[type="file"] {
-            position: absolute;
-            opacity: 0;
-            width: 100%;
-            height: 100%;
+        .file-input-wrapper input[type="file"] {
+            display: block;
+            margin: 0 auto;
+        }
+        .btn-file {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
             cursor: pointer;
+            background: #667eea;
+            color: white;
+            display: inline-block;
         }
         .btn {
             padding: 12px 24px;
@@ -141,19 +148,29 @@
         }
         .stat-label { font-size: 12px; color: #666; margin-bottom: 5px; }
         .stat-value { font-size: 24px; font-weight: 700; color: #333; }
+        .version {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(255,255,255,0.9);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 11px;
+            color: #666;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
+    <div class="version">v22 • Latest</div>
     <div class="container">
         <h1>📊 Ticker Screener & Analysis</h1>
         <p class="subtitle">Upload screener results and analyze qualifying tickers</p>
         
         <div class="upload-section">
             <h3 style="margin-bottom: 15px;">Upload Screener CSV</h3>
-            <div class="file-input-wrapper">
-                <button class="btn btn-primary">Choose File</button>
-                <input type="file" id="csvFile" accept=".csv">
-            </div>
+            <input type="file" id="csvFile" accept=".csv" class="btn-file">
             <p id="fileName" style="margin-top: 10px; color: #666;"></p>
         </div>
 
@@ -174,6 +191,8 @@
                 </div>
             </div>
             
+            <div id="filterSummary" style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; line-height: 1.6;"></div>
+            
             <div style="overflow-x: auto;">
                 <table class="screener-table" id="screenerTable">
                     <thead>
@@ -182,8 +201,10 @@
                             <th>Description</th>
                             <th>Tech Rating</th>
                             <th>MA Rating</th>
-                            <th>Avg 5-Day Gain</th>
-                            <th>Last 3 Days Min</th>
+                            <th>Avg 5-Day</th>
+                            <th>Day -3</th>
+                            <th>Day -2</th>
+                            <th>Day -1</th>
                         </tr>
                     </thead>
                     <tbody id="screenerBody"></tbody>
@@ -208,6 +229,9 @@
                 <span class="result-label">Cutoff Date:</span>
                 <span class="result-value" id="dateDisplay"></span>
             </div>
+            
+            <div id="validationMessage"></div>
+            
             <div class="avg-return">
                 <div class="avg-return-label">Average 5-Day Return</div>
                 <div class="avg-return-value" id="avgReturn"></div>
@@ -263,47 +287,157 @@
             });
         });
         
-        function processScreenerData() {
+        async function processScreenerData() {
             console.log('Processing screener data...');
+            console.log('Sample row:', screenerData[0]);
+            console.log('Column names:', Object.keys(screenerData[0]));
+            
             qualifiedTickers = [];
+            
+            var stats = {
+                total: screenerData.length,
+                hasRatings: 0,
+                strongBuyBoth: 0,
+                checking: 0,
+                meetsLast3: 0,
+                meetsAvg5: 0,
+                qualified: 0
+            };
+            
+            var cutoffDate = document.getElementById('cutoffDate').value;
+            
+            // First pass - filter by ratings
+            var strongBuyCandidates = [];
             
             for (var i = 0; i < screenerData.length; i++) {
                 var row = screenerData[i];
                 
-                var techRating = row['Technical Rating 1 day'];
-                var maRating = row['Moving Averages Rating 1 day'];
-                var weekChange = row['Price Change % 1 week'];
+                var techRating = row['Technical Rating 1 day'] || row['TechnicalRating 1 day'] || row['Technical Rating'];
+                var maRating = row['Moving Averages Rating 1 day'] || row['MovingAveragesRating 1 day'] || row['Moving Averages Rating'];
                 
                 if (!techRating || !maRating) continue;
+                stats.hasRatings++;
                 
-                var isStrongBuy = techRating === 'Strong Buy' && maRating === 'Strong Buy';
+                var techLC = techRating.toLowerCase().replace(/\s+/g, '');
+                var maLC = maRating.toLowerCase().replace(/\s+/g, '');
                 
-                if (isStrongBuy && weekChange != null) {
-                    var avg5Day = weekChange;
-                    var last3Min = weekChange * 0.6;
-                    
-                    if (last3Min >= 5 && avg5Day >= 8) {
-                        qualifiedTickers.push({
-                            symbol: row['Symbol'],
-                            description: row['Description'],
-                            techRating: techRating,
-                            maRating: maRating,
-                            avg5Day: avg5Day,
-                            last3Min: last3Min
-                        });
+                var isStrongBuy = (techLC === 'strongbuy') && (maLC === 'strongbuy');
+                
+                if (isStrongBuy) {
+                    stats.strongBuyBoth++;
+                    strongBuyCandidates.push(row);
+                }
+            }
+            
+            console.log('Found', strongBuyCandidates.length, 'Strong Buy candidates');
+            showStatus('Found ' + strongBuyCandidates.length + ' Strong Buy candidates. Validating in parallel...', 'loading');
+            
+            // Process in batches of 10 at a time for speed
+            var batchSize = 10;
+            var totalToCheck = Math.min(strongBuyCandidates.length, 100); // Limit to first 100 to keep it fast
+            
+            if (strongBuyCandidates.length > 100) {
+                console.log('Limiting to first 100 candidates for performance');
+            }
+            
+            for (var batchStart = 0; batchStart < totalToCheck; batchStart += batchSize) {
+                var batchEnd = Math.min(batchStart + batchSize, totalToCheck);
+                var batch = strongBuyCandidates.slice(batchStart, batchEnd);
+                
+                showStatus('Validating batch ' + Math.floor(batchStart / batchSize + 1) + ' (' + batchStart + '-' + batchEnd + ' of ' + totalToCheck + ')...', 'loading');
+                
+                var promises = batch.map(function(row) {
+                    return validateTicker(row, cutoffDate, stats);
+                });
+                
+                var results = await Promise.all(promises);
+                
+                for (var i = 0; i < results.length; i++) {
+                    if (results[i]) {
+                        qualifiedTickers.push(results[i]);
+                        stats.qualified++;
+                        displayQualifiedTickers(stats);
                     }
                 }
             }
             
-            console.log('Qualified tickers:', qualifiedTickers.length);
-            displayQualifiedTickers();
+            console.log('=== SCREENING STATISTICS ===');
+            console.log('Total records:', stats.total);
+            console.log('Have both ratings:', stats.hasRatings);
+            console.log('Strong Buy (both):', stats.strongBuyBoth);
+            console.log('Checked daily data:', stats.checking);
+            console.log('Meet last 3 days >= 5%:', stats.meetsLast3);
+            console.log('Meet avg 5-day >= 8%:', stats.meetsAvg5);
+            console.log('QUALIFIED:', stats.qualified);
+            
+            displayQualifiedTickers(stats);
+            showStatus('Screening complete! Found ' + stats.qualified + ' qualified tickers.', 'success');
         }
         
-        function displayQualifiedTickers() {
+        async function validateTicker(row, cutoffDate, stats) {
+            var symbol = row['Symbol'];
+            if (!symbol) return null;
+            
+            stats.checking++;
+            
+            try {
+                var data = await fetchTickerData(symbol, cutoffDate);
+                
+                if (!data || data.length === 0) return null;
+                
+                var returns = calculateDailyReturns(data);
+                
+                if (returns.length < 5) return null;
+                
+                var last5 = returns.slice(-5);
+                var last3 = returns.slice(-3);
+                
+                var allLast3Above5 = last3[0].return >= 5 && last3[1].return >= 5 && last3[2].return >= 5;
+                
+                if (!allLast3Above5) return null;
+                stats.meetsLast3++;
+                
+                var sum = 0;
+                for (var j = 0; j < last5.length; j++) {
+                    sum += last5[j].return;
+                }
+                var avgReturn = sum / 5;
+                
+                if (avgReturn < 8) return null;
+                stats.meetsAvg5++;
+                
+                return {
+                    symbol: symbol,
+                    description: row['Description'],
+                    techRating: row['Technical Rating 1 day'] || row['TechnicalRating 1 day'],
+                    maRating: row['Moving Averages Rating 1 day'] || row['MovingAveragesRating 1 day'],
+                    avg5Day: avgReturn,
+                    last3Days: [last3[0].return, last3[1].return, last3[2].return]
+                };
+                
+            } catch (error) {
+                console.log('Error checking', symbol, ':', error);
+                return null;
+            }
+        }
+        
+        function displayQualifiedTickers(stats) {
             document.getElementById('screenerSection').style.display = 'block';
             
-            document.getElementById('totalCount').textContent = screenerData.length;
+            document.getElementById('totalCount').textContent = stats ? stats.total : screenerData.length;
             document.getElementById('qualifiedCount').textContent = qualifiedTickers.length;
+            
+            var filterSummary = document.getElementById('filterSummary');
+            if (stats) {
+                filterSummary.innerHTML = '<strong>Filtering Breakdown:</strong><br>' +
+                    'Total screened: ' + stats.total + '<br>' +
+                    'Have ratings: ' + stats.hasRatings + '<br>' +
+                    'Strong Buy (both): ' + stats.strongBuyBoth + '<br>' +
+                    'Validated with daily data: ' + stats.checking + '<br>' +
+                    'Last 3 days each ≥ 5%: ' + stats.meetsLast3 + '<br>' +
+                    'Avg 5-day ≥ 8%: ' + stats.meetsAvg5 + '<br>' +
+                    '<strong>Final Qualified: ' + stats.qualified + '</strong>';
+            }
             
             if (qualifiedTickers.length > 0) {
                 var totalGain = 0;
@@ -331,10 +465,14 @@
                     '<td>' + ticker.techRating + '</td>' +
                     '<td>' + ticker.maRating + '</td>' +
                     '<td class="positive">' + ticker.avg5Day.toFixed(2) + '%</td>' +
-                    '<td class="positive">' + ticker.last3Min.toFixed(2) + '%</td>';
+                    '<td class="positive">' + ticker.last3Days[0].toFixed(2) + '%</td>' +
+                    '<td class="positive">' + ticker.last3Days[1].toFixed(2) + '%</td>' +
+                    '<td class="positive">' + ticker.last3Days[2].toFixed(2) + '%</td>';
                 
                 tbody.appendChild(row);
             }
+            
+            showStatus('Screening complete! Found ' + qualifiedTickers.length + ' qualified tickers.', 'success');
         }
         
         function selectTicker(symbol) {
@@ -461,16 +599,23 @@
             }
             
             var last5 = returns.slice(-5);
+            var last3 = returns.slice(-3);
+            
             var sum = 0;
             for (var i = 0; i < last5.length; i++) {
                 sum += last5[i].return;
             }
             var avgReturn = sum / 5;
             
+            var last3Min = Math.min(last3[0].return, last3[1].return, last3[2].return);
+            var allLast3Above5 = last3[0].return >= 5 && last3[1].return >= 5 && last3[2].return >= 5;
+            
             analysisData = {
                 ticker: symbol,
                 cutoffDate: cutoffDate,
                 avgReturn: avgReturn,
+                last3Min: last3Min,
+                allLast3Above5: allLast3Above5,
                 dailyReturns: last5,
                 allReturns: returns
             };
@@ -481,6 +626,16 @@
             var avgEl = document.getElementById('avgReturn');
             avgEl.textContent = avgReturn.toFixed(2) + '%';
             avgEl.className = 'avg-return-value ' + (avgReturn >= 0 ? 'positive' : 'negative');
+            
+            // Add validation message for last 3 days
+            var validationMsg = '';
+            if (!allLast3Above5) {
+                validationMsg = '<div style="background: #fed7d7; color: #742a2a; padding: 10px; border-radius: 5px; margin: 10px 0;"><strong>⚠ Warning:</strong> Not all of the last 3 days reached 5% individually (min: ' + last3Min.toFixed(2) + '%)</div>';
+            } else {
+                validationMsg = '<div style="background: #c6f6d5; color: #22543d; padding: 10px; border-radius: 5px; margin: 10px 0;"><strong>✓ Validated:</strong> All last 3 days met the 5% threshold</div>';
+            }
+            
+            document.getElementById('validationMessage').innerHTML = validationMsg;
             
             var dailyEl = document.getElementById('dailyReturns');
             dailyEl.innerHTML = '';
