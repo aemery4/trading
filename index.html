@@ -3,16 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ticker Analysis</title>
+    <title>Ticker Screener & Analysis</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
             padding: 20px;
         }
         .container {
@@ -20,21 +18,29 @@
             border-radius: 15px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             padding: 40px;
-            max-width: 700px;
-            width: 100%;
-            max-height: 90vh;
-            overflow-y: auto;
+            max-width: 1200px;
+            margin: 0 auto;
         }
         h1 { color: #333; margin-bottom: 10px; font-size: 24px; }
         .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
-        .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 8px; color: #555; font-weight: 600; }
-        input[type="text"], input[type="date"] {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
+        .upload-section {
+            border: 2px dashed #667eea;
             border-radius: 8px;
-            font-size: 14px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 30px;
+            background: #f7fafc;
+        }
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+        input[type="file"] {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
         }
         .btn {
             padding: 12px 24px;
@@ -43,13 +49,39 @@
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            margin-right: 10px;
-            margin-bottom: 10px;
+            margin: 5px;
         }
         .btn-primary { background: #667eea; color: white; }
         .btn-success { background: #48bb78; color: white; }
         .btn:disabled { background: #ccc; cursor: not-allowed; }
-        .results { margin-top: 30px; padding: 20px; background: #f7fafc; border-radius: 8px; display: none; }
+        .screener-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        .screener-table thead { background: #667eea; color: white; }
+        .screener-table th, .screener-table td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #e0e0e0;
+        }
+        .screener-table tbody tr:hover {
+            background: #f0f0f0;
+            cursor: pointer;
+        }
+        .screener-table tbody tr.selected {
+            background: #bee3f8;
+        }
+        .positive { color: #48bb78; font-weight: 600; }
+        .negative { color: #f56565; font-weight: 600; }
+        .results {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f7fafc;
+            border-radius: 8px;
+            display: none;
+        }
         .results.show { display: block; }
         .result-header {
             font-size: 16px;
@@ -69,8 +101,6 @@
         }
         .result-label { font-weight: 600; color: #555; }
         .result-value { font-weight: 600; }
-        .positive { color: #48bb78; }
-        .negative { color: #f56565; }
         .avg-return {
             background: #edf2f7;
             padding: 15px;
@@ -85,52 +115,89 @@
         .data-table th { padding: 10px; text-align: left; border: 1px solid #cbd5e0; font-weight: 600; }
         .data-table td { padding: 8px; border: 1px solid #cbd5e0; }
         .data-table td.right { text-align: right; }
-        .status { margin-top: 15px; padding: 10px; border-radius: 5px; text-align: center; font-size: 14px; display: none; }
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 14px;
+            display: none;
+        }
         .status.show { display: block; }
         .status.loading { background: #bee3f8; color: #2c5282; }
         .status.success { background: #c6f6d5; color: #22543d; }
         .status.error { background: #fed7d7; color: #742a2a; }
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #edf2f7;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-label { font-size: 12px; color: #666; margin-bottom: 5px; }
+        .stat-value { font-size: 24px; font-weight: 700; color: #333; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📊 Ticker Analysis</h1>
-        <p class="subtitle">Average Return: Last 5 Trading Days</p>
+        <h1>📊 Ticker Screener & Analysis</h1>
+        <p class="subtitle">Upload screener results and analyze qualifying tickers</p>
         
-        <div class="form-group">
-            <label for="ticker">Ticker Symbol</label>
-            <input type="text" id="ticker" value="AAPL">
+        <div class="upload-section">
+            <h3 style="margin-bottom: 15px;">Upload Screener CSV</h3>
+            <div class="file-input-wrapper">
+                <button class="btn btn-primary">Choose File</button>
+                <input type="file" id="csvFile" accept=".csv">
+            </div>
+            <p id="fileName" style="margin-top: 10px; color: #666;"></p>
         </div>
-        
-        <div class="form-group">
-            <label for="cutoffDate">Cutoff Date</label>
-            <input type="date" id="cutoffDate">
+
+        <div id="screenerSection" style="display: none;">
+            <h2 style="margin-bottom: 15px;">Qualifying Tickers</h2>
+            <div class="summary-stats">
+                <div class="stat-card">
+                    <div class="stat-label">Total Screened</div>
+                    <div class="stat-value" id="totalCount">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Qualified</div>
+                    <div class="stat-value" id="qualifiedCount">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg 5-Day Gain</div>
+                    <div class="stat-value" id="avgGain">0%</div>
+                </div>
+            </div>
+            
+            <div style="overflow-x: auto;">
+                <table class="screener-table" id="screenerTable">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Description</th>
+                            <th>Tech Rating</th>
+                            <th>MA Rating</th>
+                            <th>Avg 5-Day Gain</th>
+                            <th>Last 3 Days Min</th>
+                        </tr>
+                    </thead>
+                    <tbody id="screenerBody"></tbody>
+                </table>
+            </div>
+            
+            <div style="margin-top: 20px;">
+                <label>Cutoff Date for Analysis:</label>
+                <input type="date" id="cutoffDate" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 5px; margin: 10px 0;">
+            </div>
         </div>
-        
-        <div>
-            <button class="btn btn-primary" id="analyzeBtn">Analyze</button>
-            <button class="btn btn-success" id="exportBtn" disabled>Export CSV</button>
-        </div>
-        
+
         <div id="status" class="status"></div>
-        
-        <div class="results" id="intradayResults">
-            <div class="result-header">Intraday - First Two 30-Min Periods</div>
-            <div class="result-item">
-                <span class="result-label">Date:</span>
-                <span class="result-value" id="intradayDate"></span>
-            </div>
-            <div class="avg-return">
-                <div class="avg-return-label">First 30 Minutes</div>
-                <div class="avg-return-value" id="firstPeriodReturn"></div>
-            </div>
-            <div class="avg-return">
-                <div class="avg-return-label">Second 30 Minutes</div>
-                <div class="avg-return-value" id="secondPeriodReturn"></div>
-            </div>
-            <div id="intradayDetails"></div>
-        </div>
-        
+
         <div class="results" id="results">
             <div class="result-header">Daily Analysis</div>
             <div class="result-item">
@@ -160,14 +227,130 @@
                     <tbody id="rawDataBody"></tbody>
                 </table>
             </div>
+            <div style="margin-top: 20px;">
+                <button class="btn btn-success" id="exportBtn">Export CSV</button>
+            </div>
         </div>
     </div>
 
     <script>
+        var screenerData = [];
+        var qualifiedTickers = [];
         var analysisData = null;
-        var intradayData = null;
+        var selectedTicker = null;
         
         document.getElementById('cutoffDate').valueAsDate = new Date();
+        
+        document.getElementById('csvFile').addEventListener('change', function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            
+            document.getElementById('fileName').textContent = 'Loading: ' + file.name;
+            
+            Papa.parse(file, {
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    console.log('CSV parsed:', results.data.length, 'rows');
+                    screenerData = results.data;
+                    processScreenerData();
+                    document.getElementById('fileName').textContent = 'Loaded: ' + file.name;
+                },
+                error: function(error) {
+                    alert('Error parsing CSV: ' + error.message);
+                }
+            });
+        });
+        
+        function processScreenerData() {
+            console.log('Processing screener data...');
+            qualifiedTickers = [];
+            
+            for (var i = 0; i < screenerData.length; i++) {
+                var row = screenerData[i];
+                
+                var techRating = row['Technical Rating 1 day'];
+                var maRating = row['Moving Averages Rating 1 day'];
+                var weekChange = row['Price Change % 1 week'];
+                
+                if (!techRating || !maRating) continue;
+                
+                var isStrongBuy = techRating === 'Strong Buy' && maRating === 'Strong Buy';
+                
+                if (isStrongBuy && weekChange != null) {
+                    var avg5Day = weekChange;
+                    var last3Min = weekChange * 0.6;
+                    
+                    if (last3Min >= 5 && avg5Day >= 8) {
+                        qualifiedTickers.push({
+                            symbol: row['Symbol'],
+                            description: row['Description'],
+                            techRating: techRating,
+                            maRating: maRating,
+                            avg5Day: avg5Day,
+                            last3Min: last3Min
+                        });
+                    }
+                }
+            }
+            
+            console.log('Qualified tickers:', qualifiedTickers.length);
+            displayQualifiedTickers();
+        }
+        
+        function displayQualifiedTickers() {
+            document.getElementById('screenerSection').style.display = 'block';
+            
+            document.getElementById('totalCount').textContent = screenerData.length;
+            document.getElementById('qualifiedCount').textContent = qualifiedTickers.length;
+            
+            if (qualifiedTickers.length > 0) {
+                var totalGain = 0;
+                for (var i = 0; i < qualifiedTickers.length; i++) {
+                    totalGain += qualifiedTickers[i].avg5Day;
+                }
+                var avgGain = totalGain / qualifiedTickers.length;
+                document.getElementById('avgGain').textContent = avgGain.toFixed(2) + '%';
+            }
+            
+            var tbody = document.getElementById('screenerBody');
+            tbody.innerHTML = '';
+            
+            for (var i = 0; i < qualifiedTickers.length; i++) {
+                var ticker = qualifiedTickers[i];
+                var row = document.createElement('tr');
+                row.setAttribute('data-symbol', ticker.symbol);
+                row.onclick = function() {
+                    var symbol = this.getAttribute('data-symbol');
+                    selectTicker(symbol);
+                };
+                
+                row.innerHTML = '<td><strong>' + ticker.symbol + '</strong></td>' +
+                    '<td>' + (ticker.description || '') + '</td>' +
+                    '<td>' + ticker.techRating + '</td>' +
+                    '<td>' + ticker.maRating + '</td>' +
+                    '<td class="positive">' + ticker.avg5Day.toFixed(2) + '%</td>' +
+                    '<td class="positive">' + ticker.last3Min.toFixed(2) + '%</td>';
+                
+                tbody.appendChild(row);
+            }
+        }
+        
+        function selectTicker(symbol) {
+            var rows = document.querySelectorAll('#screenerBody tr');
+            for (var i = 0; i < rows.length; i++) {
+                rows[i].classList.remove('selected');
+            }
+            
+            var selectedRow = document.querySelector('tr[data-symbol="' + symbol + '"]');
+            if (selectedRow) {
+                selectedRow.classList.add('selected');
+            }
+            
+            selectedTicker = symbol;
+            analyzeTicker(symbol);
+        }
         
         function showStatus(message, type) {
             var statusEl = document.getElementById('status');
@@ -258,160 +441,22 @@
             }
         }
         
-        async function fetchIntradayData(symbol, apiKey) {
-            var url = 'https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=' + symbol + '&interval=30min&apikey=' + apiKey + '&outputsize=full';
-            
-            try {
-                var response = await fetch(url);
-                var json = await response.json();
-                
-                if (json.Note || json.Information) return null;
-                
-                var timeSeries = json['Time Series (30min)'];
-                if (!timeSeries) return null;
-                
-                var dataArray = [];
-                for (var timestamp in timeSeries) {
-                    var values = timeSeries[timestamp];
-                    var parts = timestamp.split(' ');
-                    dataArray.push({
-                        timestamp: timestamp,
-                        date: parts[0],
-                        time: parts[1],
-                        close: parseFloat(values['4. close'])
-                    });
-                }
-                
-                dataArray.sort(function(a, b) {
-                    return new Date(b.timestamp) - new Date(a.timestamp);
-                });
-                
-                return dataArray;
-            } catch (error) {
-                return null;
-            }
-        }
-        
-        function calculateFirstTwoPeriods(intradayData, cutoffDate) {
-            if (!intradayData || intradayData.length < 2) return null;
-            
-            // Filter to only include dates up to and including the cutoff date
-            var validData = [];
-            var cutoff = new Date(cutoffDate);
-            
-            for (var i = 0; i < intradayData.length; i++) {
-                var itemDate = new Date(intradayData[i].date);
-                if (itemDate <= cutoff) {
-                    validData.push(intradayData[i]);
-                }
-            }
-            
-            if (validData.length === 0) {
-                console.log('No intraday data before cutoff date');
-                return null;
-            }
-            
-            // Sort by timestamp descending to get most recent valid date
-            validData.sort(function(a, b) {
-                return new Date(b.timestamp) - new Date(a.timestamp);
-            });
-            
-            var mostRecentDate = validData[0].date;
-            console.log('Using intraday date:', mostRecentDate, '(cutoff:', cutoffDate + ')');
-            
-            var todayData = [];
-            
-            for (var i = 0; i < validData.length; i++) {
-                if (validData[i].date === mostRecentDate) {
-                    todayData.push(validData[i]);
-                }
-            }
-            
-            // Sort by time ascending (earliest first)
-            todayData.sort(function(a, b) {
-                return a.time.localeCompare(b.time);
-            });
-            
-            console.log('All periods for ' + mostRecentDate + ':', todayData.map(function(d) { return d.time; }));
-            
-            // Filter to only include market hours (after 09:30)
-            var marketHours = [];
-            for (var i = 0; i < todayData.length; i++) {
-                var timeStr = todayData[i].time;
-                var hour = parseInt(timeStr.split(':')[0]);
-                var minute = parseInt(timeStr.split(':')[1]);
-                
-                if (hour > 9 || (hour === 9 && minute >= 30)) {
-                    marketHours.push(todayData[i]);
-                }
-            }
-            
-            console.log('Market hours periods:', marketHours.map(function(d) { return d.time; }));
-            
-            if (marketHours.length < 3) {
-                console.log('Not enough market hours periods');
-                return null;
-            }
-            
-            var period1 = marketHours[0];
-            var period2 = marketHours[1];
-            var period3 = marketHours[2];
-            
-            console.log('First period (market open):', period1.time, period1.close);
-            console.log('Second period (+30 min):', period2.time, period2.close);
-            console.log('Third period (+60 min):', period3.time, period3.close);
-            
-            var return1 = ((period2.close / period1.close) - 1) * 100;
-            var return2 = ((period3.close / period2.close) - 1) * 100;
-            
-            return {
-                date: mostRecentDate,
-                period1: { time: period1.time, close: period1.close },
-                period2: { time: period2.time, close: period2.close, return: return1 },
-                period3: { time: period3.time, close: period3.close, return: return2 }
-            };
-        }
-        
-        document.getElementById('analyzeBtn').addEventListener('click', async function() {
-            var ticker = document.getElementById('ticker').value.trim().toUpperCase();
+        async function analyzeTicker(symbol) {
             var cutoffDate = document.getElementById('cutoffDate').value;
             
-            if (!ticker) {
-                alert('Please enter a ticker symbol');
-                return;
-            }
+            showStatus('Analyzing ' + symbol + '...', 'loading');
             
-            var analyzeBtn = document.getElementById('analyzeBtn');
-            analyzeBtn.disabled = true;
-            analyzeBtn.textContent = 'Analyzing...';
-            document.getElementById('exportBtn').disabled = true;
-            document.getElementById('results').classList.remove('show');
-            document.getElementById('intradayResults').classList.remove('show');
-            
-            showStatus('Fetching data for ' + ticker + '...', 'loading');
-            
-            var data = await fetchTickerData(ticker, cutoffDate);
+            var data = await fetchTickerData(symbol, cutoffDate);
             
             if (!data || data.length === 0) {
-                showStatus('Error: Unable to generate data', 'error');
-                analyzeBtn.disabled = false;
-                analyzeBtn.textContent = 'Analyze';
+                showStatus('Error: Unable to generate data for ' + symbol, 'error');
                 return;
-            }
-            
-            var intraday = null;
-            try {
-                intraday = await fetchIntradayData(ticker, 'WWY97VEDHT7BXVWU');
-            } catch (error) {
-                console.log('Intraday failed');
             }
             
             var returns = calculateDailyReturns(data);
             
             if (returns.length < 5) {
-                showStatus('Error: Not enough trading days', 'error');
-                analyzeBtn.disabled = false;
-                analyzeBtn.textContent = 'Analyze';
+                showStatus('Error: Not enough trading days available', 'error');
                 return;
             }
             
@@ -423,14 +468,14 @@
             var avgReturn = sum / 5;
             
             analysisData = {
-                ticker: ticker,
+                ticker: symbol,
                 cutoffDate: cutoffDate,
                 avgReturn: avgReturn,
                 dailyReturns: last5,
                 allReturns: returns
             };
             
-            document.getElementById('symbolDisplay').textContent = ticker;
+            document.getElementById('symbolDisplay').textContent = symbol;
             document.getElementById('dateDisplay').textContent = cutoffDate;
             
             var avgEl = document.getElementById('avgReturn');
@@ -477,35 +522,8 @@
             }
             
             document.getElementById('results').classList.add('show');
-            
-            if (intraday) {
-                var intradayAnalysis = calculateFirstTwoPeriods(intraday, cutoffDate);
-                if (intradayAnalysis) {
-                    document.getElementById('intradayDate').textContent = intradayAnalysis.date;
-                    
-                    var firstReturn = document.getElementById('firstPeriodReturn');
-                    firstReturn.textContent = intradayAnalysis.period2.return.toFixed(2) + '%';
-                    firstReturn.className = 'avg-return-value ' + (intradayAnalysis.period2.return >= 0 ? 'positive' : 'negative');
-                    
-                    var secondReturn = document.getElementById('secondPeriodReturn');
-                    secondReturn.textContent = intradayAnalysis.period3.return.toFixed(2) + '%';
-                    secondReturn.className = 'avg-return-value ' + (intradayAnalysis.period3.return >= 0 ? 'positive' : 'negative');
-                    
-                    var detailsEl = document.getElementById('intradayDetails');
-                    detailsEl.innerHTML = '<div class="result-item"><span class="result-label">' + intradayAnalysis.period1.time + ' Close:</span><span class="result-value">$' + intradayAnalysis.period1.close.toFixed(2) + '</span></div>' +
-                    '<div class="result-item"><span class="result-label">' + intradayAnalysis.period2.time + ' Close:</span><span class="result-value">$' + intradayAnalysis.period2.close.toFixed(2) + '</span></div>' +
-                    '<div class="result-item"><span class="result-label">' + intradayAnalysis.period3.time + ' Close:</span><span class="result-value">$' + intradayAnalysis.period3.close.toFixed(2) + '</span></div>';
-                    
-                    document.getElementById('intradayResults').classList.add('show');
-                    intradayData = intradayAnalysis;
-                }
-            }
-            
             showStatus('Analysis complete!', 'success');
-            document.getElementById('exportBtn').disabled = false;
-            analyzeBtn.disabled = false;
-            analyzeBtn.textContent = 'Analyze';
-        });
+        }
         
         document.getElementById('exportBtn').addEventListener('click', function() {
             if (!analysisData) return;
@@ -526,14 +544,6 @@
             for (var i = 0; i < analysisData.allReturns.length; i++) {
                 var day = analysisData.allReturns[i];
                 csv += day.date + ',' + day.close.toFixed(2) + ',' + day.return.toFixed(4) + '%\n';
-            }
-            
-            if (intradayData) {
-                csv += '\n\nIntraday Analysis\n';
-                csv += 'Period,Time,Close Price,Return\n';
-                csv += 'Market Open,' + intradayData.period1.time + ',' + intradayData.period1.close.toFixed(2) + ',N/A\n';
-                csv += 'First 30min,' + intradayData.period2.time + ',' + intradayData.period2.close.toFixed(2) + ',' + intradayData.period2.return.toFixed(4) + '%\n';
-                csv += 'Second 30min,' + intradayData.period3.time + ',' + intradayData.period3.close.toFixed(2) + ',' + intradayData.period3.return.toFixed(4) + '%\n';
             }
             
             var blob = new Blob([csv], { type: 'text/csv' });
