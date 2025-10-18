@@ -163,7 +163,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v34 • Latest</div>
+    <div class="version">v42 • Latest</div>
     <div class="container">
         <h1>📊 Ticker Screener & Analysis</h1>
         <p class="subtitle">Upload screener results and analyze qualifying tickers</p>
@@ -241,6 +241,12 @@
                 <label>Cutoff Date for Analysis:</label>
                 <input type="date" id="cutoffDate" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 5px; margin: 10px 0;">
             </div>
+            
+            <div style="margin-top: 20px; text-align: center;">
+                <button class="btn btn-success" id="exportScreenerCSV" disabled>Export Screener CSV</button>
+                <button class="btn btn-success" id="exportScreenerBacktest" disabled>Export Backtest Config</button>
+                <button class="btn btn-success" id="exportScreenerBot" disabled>Export Bot Config</button>
+            </div>
         </div>
 
         <div id="status" class="status"></div>
@@ -279,6 +285,8 @@
             </div>
             <div style="margin-top: 20px;">
                 <button class="btn btn-success" id="exportBtn">Export CSV</button>
+                <button class="btn btn-success" id="exportBacktestBtn">Export Backtest Config</button>
+                <button class="btn btn-success" id="exportBotBtn">Export Bot Config</button>
             </div>
         </div>
     </div>
@@ -530,6 +538,10 @@
             }
             
             showStatus('Screening complete! Found ' + qualifiedTickers.length + ' qualified tickers.', 'success');
+            
+            document.getElementById('exportScreenerCSV').disabled = false;
+            document.getElementById('exportScreenerBacktest').disabled = false;
+            document.getElementById('exportScreenerBot').disabled = false;
         }
         
         function selectTicker(symbol) {
@@ -767,6 +779,181 @@
             window.URL.revokeObjectURL(url);
             
             showStatus('CSV downloaded!', 'success');
+        });
+        
+        document.getElementById('exportBacktestBtn').addEventListener('click', function() {
+            if (qualifiedTickers.length === 0) {
+                alert('No qualified tickers to export');
+                return;
+            }
+            
+            var cutoffDate = document.getElementById('cutoffDate').value;
+            
+            var tickersObj = {};
+            for (var i = 0; i < qualifiedTickers.length; i++) {
+                var ticker = qualifiedTickers[i];
+                var avgReturn = ticker.avg5Day / 100;
+                tickersObj[ticker.symbol] = parseFloat(avgReturn.toFixed(4));
+            }
+            
+            var backtestConfig = {
+                backtest: {
+                    date: cutoffDate,
+                    tickers: tickersObj
+                }
+            };
+            
+            var jsonStr = JSON.stringify(backtestConfig, null, 2);
+            var blob = new Blob([jsonStr], { type: 'application/json' });
+            var url = window.URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'backtest_settings.json';
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            showStatus('Backtest config downloaded!', 'success');
+        });
+        
+        document.getElementById('exportBotBtn').addEventListener('click', function() {
+            if (qualifiedTickers.length === 0) {
+                alert('No qualified tickers to export');
+                return;
+            }
+            
+            var tickersObj = {};
+            for (var i = 0; i < qualifiedTickers.length; i++) {
+                var ticker = qualifiedTickers[i];
+                var avgReturn = ticker.avg5Day / 100;
+                tickersObj[ticker.symbol] = parseFloat(avgReturn.toFixed(4));
+            }
+            
+            var botConfig = {
+                trading_parameters: {
+                    position_size: 1000,
+                    buffer_percent: 0.03,
+                    initial_stop_percent: 0.03,
+                    tight_stop_percent: 0.005,
+                    profit_threshold: 0.055,
+                    stabilization_minutes: 5,
+                    rise_rate_threshold: 0.005,
+                    poll_interval: 30
+                },
+                live_trading: {
+                    tickers: tickersObj
+                }
+            };
+            
+            var jsonStr = JSON.stringify(botConfig, null, 2);
+            var blob = new Blob([jsonStr], { type: 'application/json' });
+            var url = window.URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'bot_settings.json';
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            showStatus('Bot config downloaded!', 'success');
+        });
+        
+        document.getElementById('exportScreenerCSV').addEventListener('click', function() {
+            if (qualifiedTickers.length === 0) {
+                alert('No qualified tickers to export');
+                return;
+            }
+            
+            var csv = 'Symbol,Description,Tech Rating,MA Rating,Avg Return %,Daily Returns\n';
+            
+            for (var i = 0; i < qualifiedTickers.length; i++) {
+                var ticker = qualifiedTickers[i];
+                var dailyReturnsStr = ticker.consecutiveDays.map(function(r) { return r.toFixed(2) + '%'; }).join('; ');
+                csv += ticker.symbol + ',"' + (ticker.description || '') + '",' + ticker.techRating + ',' + ticker.maRating + ',' + ticker.avg5Day.toFixed(2) + '%,"' + dailyReturnsStr + '"\n';
+            }
+            
+            var blob = new Blob([csv], { type: 'text/csv' });
+            var url = window.URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'Qualified_Tickers_' + new Date().toISOString().split('T')[0] + '.csv';
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            showStatus('Screener CSV downloaded!', 'success');
+        });
+        
+        document.getElementById('exportScreenerBacktest').addEventListener('click', function() {
+            if (qualifiedTickers.length === 0) {
+                alert('No qualified tickers to export');
+                return;
+            }
+            
+            var cutoffDate = document.getElementById('cutoffDate').value;
+            
+            var tickersObj = {};
+            for (var i = 0; i < qualifiedTickers.length; i++) {
+                var ticker = qualifiedTickers[i];
+                var avgReturn = ticker.avg5Day / 100;
+                tickersObj[ticker.symbol] = parseFloat(avgReturn.toFixed(4));
+            }
+            
+            var backtestConfig = {
+                backtest: {
+                    date: cutoffDate,
+                    tickers: tickersObj
+                }
+            };
+            
+            var jsonStr = JSON.stringify(backtestConfig, null, 2);
+            var blob = new Blob([jsonStr], { type: 'application/json' });
+            var url = window.URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'backtest_settings.json';
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            showStatus('Backtest config downloaded!', 'success');
+        });
+        
+        document.getElementById('exportScreenerBot').addEventListener('click', function() {
+            if (qualifiedTickers.length === 0) {
+                alert('No qualified tickers to export');
+                return;
+            }
+            
+            var tickersObj = {};
+            for (var i = 0; i < qualifiedTickers.length; i++) {
+                var ticker = qualifiedTickers[i];
+                var avgReturn = ticker.avg5Day / 100;
+                tickersObj[ticker.symbol] = parseFloat(avgReturn.toFixed(4));
+            }
+            
+            var botConfig = {
+                trading_parameters: {
+                    position_size: 1000,
+                    buffer_percent: 0.03,
+                    initial_stop_percent: 0.03,
+                    tight_stop_percent: 0.005,
+                    profit_threshold: 0.055,
+                    stabilization_minutes: 5,
+                    rise_rate_threshold: 0.005,
+                    poll_interval: 30
+                },
+                live_trading: {
+                    tickers: tickersObj
+                }
+            };
+            
+            var jsonStr = JSON.stringify(botConfig, null, 2);
+            var blob = new Blob([jsonStr], { type: 'application/json' });
+            var url = window.URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'bot_settings.json';
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            showStatus('Bot config downloaded!', 'success');
         });
     </script>
 </body>
