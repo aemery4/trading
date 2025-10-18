@@ -163,7 +163,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v24 • Latest</div>
+    <div class="version">v25 • Latest</div>
     <div class="container">
         <h1>📊 Ticker Screener & Analysis</h1>
         <p class="subtitle">Upload screener results and analyze qualifying tickers</p>
@@ -172,6 +172,34 @@
             <h3 style="margin-bottom: 15px;">Upload Screener CSV</h3>
             <input type="file" id="csvFile" accept=".csv" class="btn-file">
             <p id="fileName" style="margin-top: 10px; color: #666;"></p>
+        </div>
+
+        <div style="background: #f7fafc; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <h3 style="margin-bottom: 15px;">Screening Criteria</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-size: 13px;">Consecutive Days</label>
+                    <input type="number" id="consecutiveDays" value="3" min="1" max="10" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 5px;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-size: 13px;">Min Daily Gain (%)</label>
+                    <input type="number" id="minDailyGain" value="5" min="0" max="100" step="0.1" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 5px;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-size: 13px;">Average Days Period</label>
+                    <input type="number" id="avgDaysPeriod" value="5" min="1" max="20" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 5px;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-size: 13px;">Min Average Gain (%)</label>
+                    <input type="number" id="minAvgGain" value="8" min="0" max="100" step="0.1" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 5px;">
+                </div>
+            </div>
+            <p style="margin-top: 10px; font-size: 12px; color: #666;">
+                <strong>Example:</strong> With defaults, requires 3 consecutive days each with ≥5% gain, and average of last 5 days ≥8%
+            </p>
+            <div style="margin-top: 15px; text-align: center;">
+                <button class="btn btn-primary" id="processBtn" disabled>Process Screening</button>
+            </div>
         </div>
 
         <div id="screenerSection" style="display: none;">
@@ -201,10 +229,8 @@
                             <th>Description</th>
                             <th>Tech Rating</th>
                             <th>MA Rating</th>
-                            <th>Avg 5-Day</th>
-                            <th>Day -3</th>
-                            <th>Day -2</th>
-                            <th>Day -1</th>
+                            <th>Avg Return</th>
+                            <th>Daily Returns</th>
                         </tr>
                     </thead>
                     <tbody id="screenerBody"></tbody>
@@ -278,13 +304,21 @@
                 complete: function(results) {
                     console.log('CSV parsed:', results.data.length, 'rows');
                     screenerData = results.data;
-                    processScreenerData();
-                    document.getElementById('fileName').textContent = 'Loaded: ' + file.name;
+                    document.getElementById('fileName').textContent = 'Loaded: ' + file.name + ' (' + results.data.length + ' rows)';
+                    document.getElementById('processBtn').disabled = false;
                 },
                 error: function(error) {
                     alert('Error parsing CSV: ' + error.message);
                 }
             });
+        });
+        
+        document.getElementById('processBtn').addEventListener('click', function() {
+            if (screenerData.length === 0) {
+                alert('Please upload a CSV file first');
+                return;
+            }
+            processScreenerData();
         });
         
         async function processScreenerData() {
@@ -380,6 +414,12 @@
             
             stats.checking++;
             
+            // Get configured parameters
+            var consecutiveDays = parseInt(document.getElementById('consecutiveDays').value) || 3;
+            var minDailyGain = parseFloat(document.getElementById('minDailyGain').value) || 5;
+            var avgDaysPeriod = parseInt(document.getElementById('avgDaysPeriod').value) || 5;
+            var minAvgGain = parseFloat(document.getElementById('minAvgGain').value) || 8;
+            
             try {
                 var data = await fetchTickerData(symbol, cutoffDate);
                 
@@ -387,24 +427,37 @@
                 
                 var returns = calculateDailyReturns(data);
                 
-                if (returns.length < 5) return null;
+                if (returns.length < Math.max(consecutiveDays, avgDaysPeriod)) return null;
                 
-                var last5 = returns.slice(-5);
-                var last3 = returns.slice(-3);
+                // Check consecutive days criterion
+                var lastNDays = returns.slice(-consecutiveDays);
+                var allDaysAboveMin = true;
+                for (var i = 0; i < lastNDays.length; i++) {
+                    if (lastNDays[i].return < minDailyGain) {
+                        allDaysAboveMin = false;
+                        break;
+                    }
+                }
                 
-                var allLast3Above5 = last3[0].return >= 5 && last3[1].return >= 5 && last3[2].return >= 5;
-                
-                if (!allLast3Above5) return null;
+                if (!allDaysAboveMin) return null;
                 stats.meetsLast3++;
                 
+                // Check average criterion
+                var lastAvgDays = returns.slice(-avgDaysPeriod);
                 var sum = 0;
-                for (var j = 0; j < last5.length; j++) {
-                    sum += last5[j].return;
+                for (var j = 0; j < lastAvgDays.length; j++) {
+                    sum += lastAvgDays[j].return;
                 }
-                var avgReturn = sum / 5;
+                var avgReturn = sum / avgDaysPeriod;
                 
-                if (avgReturn < 8) return null;
+                if (avgReturn < minAvgGain) return null;
                 stats.meetsAvg5++;
+                
+                // Collect the consecutive days data
+                var consecutiveDaysData = [];
+                for (var i = 0; i < lastNDays.length; i++) {
+                    consecutiveDaysData.push(lastNDays[i].return);
+                }
                 
                 return {
                     symbol: symbol,
@@ -412,7 +465,7 @@
                     techRating: row['Technical Rating 1 day'] || row['TechnicalRating 1 day'],
                     maRating: row['Moving Averages Rating 1 day'] || row['MovingAveragesRating 1 day'],
                     avg5Day: avgReturn,
-                    last3Days: [last3[0].return, last3[1].return, last3[2].return]
+                    consecutiveDays: consecutiveDaysData
                 };
                 
             } catch (error) {
@@ -460,14 +513,18 @@
                     selectTicker(symbol);
                 };
                 
+                var dailyReturnsStr = '';
+                for (var j = 0; j < ticker.consecutiveDays.length; j++) {
+                    dailyReturnsStr += ticker.consecutiveDays[j].toFixed(2) + '%';
+                    if (j < ticker.consecutiveDays.length - 1) dailyReturnsStr += ', ';
+                }
+                
                 row.innerHTML = '<td><strong>' + ticker.symbol + '</strong></td>' +
                     '<td>' + (ticker.description || '') + '</td>' +
                     '<td>' + ticker.techRating + '</td>' +
                     '<td>' + ticker.maRating + '</td>' +
                     '<td class="positive">' + ticker.avg5Day.toFixed(2) + '%</td>' +
-                    '<td class="positive">' + ticker.last3Days[0].toFixed(2) + '%</td>' +
-                    '<td class="positive">' + ticker.last3Days[1].toFixed(2) + '%</td>' +
-                    '<td class="positive">' + ticker.last3Days[2].toFixed(2) + '%</td>';
+                    '<td class="positive">' + dailyReturnsStr + '</td>';
                 
                 tbody.appendChild(row);
             }
