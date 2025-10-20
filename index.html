@@ -163,7 +163,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v42 • Latest</div>
+    <div class="version">v43 • Latest</div>
     <div class="container">
         <h1>📊 Ticker Screener & Analysis</h1>
         <p class="subtitle">Upload screener results and analyze qualifying tickers</p>
@@ -231,6 +231,7 @@
                             <th>MA Rating</th>
                             <th>Avg Return</th>
                             <th>Daily Returns</th>
+                            <th>IEX</th>
                         </tr>
                     </thead>
                     <tbody id="screenerBody"></tbody>
@@ -240,6 +241,16 @@
             <div style="margin-top: 20px;">
                 <label>Cutoff Date for Analysis:</label>
                 <input type="date" id="cutoffDate" style="padding: 8px; border: 2px solid #e0e0e0; border-radius: 5px; margin: 10px 0;">
+            </div>
+            
+            <div style="margin-top: 20px; padding: 15px; background: #fff; border-radius: 8px; border: 2px solid #e0e0e0;">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="filterIEX" style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;">
+                    <span style="font-weight: 600;">Only include tickers with IEX data available</span>
+                </label>
+                <p style="margin-top: 8px; font-size: 12px; color: #666;">
+                    When checked, only tickers that have real-time data on IEX will be included in exports and the table.
+                </p>
             </div>
             
             <div style="margin-top: 20px; text-align: center;">
@@ -461,6 +472,9 @@
                 if (avgReturn < minAvgGain) return null;
                 stats.meetsAvg5++;
                 
+                // Check IEX availability
+                var hasIEX = await checkIEXAvailability(symbol);
+                
                 // Collect the consecutive days data
                 var consecutiveDaysData = [];
                 for (var i = 0; i < lastNDays.length; i++) {
@@ -473,12 +487,23 @@
                     techRating: row['Technical Rating 1 day'] || row['TechnicalRating 1 day'],
                     maRating: row['Moving Averages Rating 1 day'] || row['MovingAveragesRating 1 day'],
                     avg5Day: avgReturn,
-                    consecutiveDays: consecutiveDaysData
+                    consecutiveDays: consecutiveDaysData,
+                    hasIEX: hasIEX
                 };
                 
             } catch (error) {
                 console.log('Error checking', symbol, ':', error);
                 return null;
+            }
+        }
+        
+        async function checkIEXAvailability(symbol) {
+            try {
+                var url = 'https://cloud.iexapis.com/stable/stock/' + symbol + '/quote?token=pk_test';
+                var response = await fetch(url);
+                return response.ok;
+            } catch (error) {
+                return false;
             }
         }
         
@@ -512,8 +537,11 @@
             var tbody = document.getElementById('screenerBody');
             tbody.innerHTML = '';
             
-            for (var i = 0; i < qualifiedTickers.length; i++) {
-                var ticker = qualifiedTickers[i];
+            var filterIEX = document.getElementById('filterIEX').checked;
+            var displayTickers = filterIEX ? qualifiedTickers.filter(function(t) { return t.hasIEX; }) : qualifiedTickers;
+            
+            for (var i = 0; i < displayTickers.length; i++) {
+                var ticker = displayTickers[i];
                 var row = document.createElement('tr');
                 row.setAttribute('data-symbol', ticker.symbol);
                 row.onclick = function() {
@@ -527,12 +555,15 @@
                     if (j < ticker.consecutiveDays.length - 1) dailyReturnsStr += ', ';
                 }
                 
+                var iexBadge = ticker.hasIEX ? '<span style="color: #48bb78;">✓</span>' : '<span style="color: #f56565;">✗</span>';
+                
                 row.innerHTML = '<td><strong>' + ticker.symbol + '</strong></td>' +
                     '<td>' + (ticker.description || '') + '</td>' +
                     '<td>' + ticker.techRating + '</td>' +
                     '<td>' + ticker.maRating + '</td>' +
                     '<td class="positive">' + ticker.avg5Day.toFixed(2) + '%</td>' +
-                    '<td class="positive">' + dailyReturnsStr + '</td>';
+                    '<td class="positive">' + dailyReturnsStr + '</td>' +
+                    '<td style="text-align: center;">' + iexBadge + '</td>';
                 
                 tbody.appendChild(row);
             }
@@ -856,18 +887,25 @@
             showStatus('Bot config downloaded!', 'success');
         });
         
+        document.getElementById('filterIEX').addEventListener('change', function() {
+            displayQualifiedTickers();
+        });
+        
         document.getElementById('exportScreenerCSV').addEventListener('click', function() {
             if (qualifiedTickers.length === 0) {
                 alert('No qualified tickers to export');
                 return;
             }
             
-            var csv = 'Symbol,Description,Tech Rating,MA Rating,Avg Return %,Daily Returns\n';
+            var filterIEX = document.getElementById('filterIEX').checked;
+            var exportTickers = filterIEX ? qualifiedTickers.filter(function(t) { return t.hasIEX; }) : qualifiedTickers;
             
-            for (var i = 0; i < qualifiedTickers.length; i++) {
-                var ticker = qualifiedTickers[i];
+            var csv = 'Symbol,Description,Tech Rating,MA Rating,Avg Return %,Daily Returns,IEX Available\n';
+            
+            for (var i = 0; i < exportTickers.length; i++) {
+                var ticker = exportTickers[i];
                 var dailyReturnsStr = ticker.consecutiveDays.map(function(r) { return r.toFixed(2) + '%'; }).join('; ');
-                csv += ticker.symbol + ',"' + (ticker.description || '') + '",' + ticker.techRating + ',' + ticker.maRating + ',' + ticker.avg5Day.toFixed(2) + '%,"' + dailyReturnsStr + '"\n';
+                csv += ticker.symbol + ',"' + (ticker.description || '') + '",' + ticker.techRating + ',' + ticker.maRating + ',' + ticker.avg5Day.toFixed(2) + '%,"' + dailyReturnsStr + '",' + (ticker.hasIEX ? 'Yes' : 'No') + '\n';
             }
             
             var blob = new Blob([csv], { type: 'text/csv' });
@@ -887,11 +925,14 @@
                 return;
             }
             
+            var filterIEX = document.getElementById('filterIEX').checked;
+            var exportTickers = filterIEX ? qualifiedTickers.filter(function(t) { return t.hasIEX; }) : qualifiedTickers;
+            
             var cutoffDate = document.getElementById('cutoffDate').value;
             
             var tickersObj = {};
-            for (var i = 0; i < qualifiedTickers.length; i++) {
-                var ticker = qualifiedTickers[i];
+            for (var i = 0; i < exportTickers.length; i++) {
+                var ticker = exportTickers[i];
                 var avgReturn = ticker.avg5Day / 100;
                 tickersObj[ticker.symbol] = parseFloat(avgReturn.toFixed(4));
             }
@@ -921,9 +962,12 @@
                 return;
             }
             
+            var filterIEX = document.getElementById('filterIEX').checked;
+            var exportTickers = filterIEX ? qualifiedTickers.filter(function(t) { return t.hasIEX; }) : qualifiedTickers;
+            
             var tickersObj = {};
-            for (var i = 0; i < qualifiedTickers.length; i++) {
-                var ticker = qualifiedTickers[i];
+            for (var i = 0; i < exportTickers.length; i++) {
+                var ticker = exportTickers[i];
                 var avgReturn = ticker.avg5Day / 100;
                 tickersObj[ticker.symbol] = parseFloat(avgReturn.toFixed(4));
             }
