@@ -163,7 +163,7 @@
     </style>
 </head>
 <body>
-    <div class="version">v43 • Latest</div>
+    <div class="version">v46 • Latest</div>
     <div class="container">
         <h1>📊 Ticker Screener & Analysis</h1>
         <p class="subtitle">Upload screener results and analyze qualifying tickers</p>
@@ -172,6 +172,25 @@
             <h3 style="margin-bottom: 15px;">Upload Screener CSV</h3>
             <input type="file" id="csvFile" accept=".csv" class="btn-file">
             <p id="fileName" style="margin-top: 10px; color: #666;"></p>
+        </div>
+
+        <div style="background: #f7fafc; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <h3 style="margin-bottom: 15px;">Market Data API Configuration</h3>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 13px;">API Provider</label>
+                <select id="apiProvider" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 5px;">
+                    <option value="none">None (assume all available)</option>
+                    <option value="polygon">Polygon.io</option>
+                    <option value="alpaca">Alpaca Markets</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-size: 13px;">API Token (Optional)</label>
+                <input type="text" id="apiToken" placeholder="Enter your API token" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 5px; font-family: monospace;">
+                <p style="margin-top: 5px; font-size: 11px; color: #666;">
+                    <strong>Note:</strong> IEX Cloud shut down in 2024. Use Polygon.io (free tier) or Alpaca Markets (free account) instead.
+                </p>
+            </div>
         </div>
 
         <div style="background: #f7fafc; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
@@ -231,7 +250,7 @@
                             <th>MA Rating</th>
                             <th>Avg Return</th>
                             <th>Daily Returns</th>
-                            <th>IEX</th>
+                            <th>API</th>
                         </tr>
                     </thead>
                     <tbody id="screenerBody"></tbody>
@@ -246,10 +265,10 @@
             <div style="margin-top: 20px; padding: 15px; background: #fff; border-radius: 8px; border: 2px solid #e0e0e0;">
                 <label style="display: flex; align-items: center; cursor: pointer;">
                     <input type="checkbox" id="filterIEX" style="margin-right: 10px; width: 18px; height: 18px; cursor: pointer;">
-                    <span style="font-weight: 600;">Only include tickers with IEX data available</span>
+                    <span style="font-weight: 600;">Only include tickers with API data available</span>
                 </label>
                 <p style="margin-top: 8px; font-size: 12px; color: #666;">
-                    When checked, only tickers that have real-time data on IEX will be included in exports and the table.
+                    Filters tickers based on market data API availability (Polygon.io or Alpaca). Requires API token above.
                 </p>
             </div>
             
@@ -498,12 +517,52 @@
         }
         
         async function checkIEXAvailability(symbol) {
+            var apiProvider = document.getElementById('apiProvider').value;
+            var apiToken = document.getElementById('apiToken').value.trim();
+            
+            // If no provider or token, assume all tickers are available
+            if (apiProvider === 'none' || !apiToken) {
+                console.log(symbol, '- No API configured, assuming available');
+                return true;
+            }
+            
             try {
-                var url = 'https://cloud.iexapis.com/stable/stock/' + symbol + '/quote?token=pk_test';
-                var response = await fetch(url);
-                return response.ok;
+                var url;
+                
+                if (apiProvider === 'polygon') {
+                    // Polygon.io API - check if ticker exists
+                    url = 'https://api.polygon.io/v3/reference/tickers/' + symbol + '?apiKey=' + apiToken;
+                } else if (apiProvider === 'alpaca') {
+                    // Alpaca Markets API - check if asset exists
+                    url = 'https://paper-api.alpaca.markets/v2/assets/' + symbol;
+                }
+                
+                console.log('Checking', apiProvider, 'for:', symbol);
+                
+                var headers = {};
+                if (apiProvider === 'alpaca') {
+                    headers['APCA-API-KEY-ID'] = apiToken;
+                    headers['APCA-API-SECRET-KEY'] = apiToken; // User needs to provide both in token field
+                }
+                
+                var response = await fetch(url, { headers: headers });
+                
+                if (response.ok) {
+                    console.log(symbol, '- Available on', apiProvider);
+                    return true;
+                } else if (response.status === 404) {
+                    console.log(symbol, '- NOT available on', apiProvider);
+                    return false;
+                } else if (response.status === 401 || response.status === 403) {
+                    console.log(symbol, '- API authentication failed');
+                    return true; // Assume available to continue
+                } else {
+                    console.log(symbol, '- Check failed (status:', response.status + ')');
+                    return false;
+                }
             } catch (error) {
-                return false;
+                console.log(symbol, '- API check error:', error.message);
+                return true; // On error, assume available
             }
         }
         
@@ -900,7 +959,7 @@
             var filterIEX = document.getElementById('filterIEX').checked;
             var exportTickers = filterIEX ? qualifiedTickers.filter(function(t) { return t.hasIEX; }) : qualifiedTickers;
             
-            var csv = 'Symbol,Description,Tech Rating,MA Rating,Avg Return %,Daily Returns,IEX Available\n';
+            var csv = 'Symbol,Description,Tech Rating,MA Rating,Avg Return %,Daily Returns,API Available\n';
             
             for (var i = 0; i < exportTickers.length; i++) {
                 var ticker = exportTickers[i];
